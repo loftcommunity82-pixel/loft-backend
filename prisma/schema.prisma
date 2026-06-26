@@ -1,0 +1,823 @@
+// Loft Community - Employment Platform Prisma Schema
+// Transformed from Fuzzie automation platform to Loft Community job portal
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// NEXT AUTH MODELS
+// ============================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  // References User.clerkId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String  // References User.clerkId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id              Int       @id @default(autoincrement())
+  clerkId         String    @unique // Required - use "local_<timestamp>" for credentials
+  email           String    @unique
+  name            String?
+  firstName       String?
+  lastName        String?
+  profileImage    String?
+  phone           String?
+  hashedPassword  String?   // For credentials login
+  
+  // Profile Information
+  dateOfBirth     DateTime?
+  address         String?
+  city            String?
+  country         String?
+  nationality    String?
+  
+  // Employment Status
+  isEmployer      Boolean   @default(false)
+  isApplicant     Boolean   @default(true)
+  
+  // Account Status
+  isVerified      Boolean   @default(false)
+  emailVerified   Boolean   @default(false)
+  
+  // English Proficiency Test
+  englishTestScore     Int?
+  englishTestDate      DateTime?
+  englishTestLevel     EnglishLevel? @default(BEGINNER)
+  
+  // Subscription/Tier
+  tier            String    @default("Free")
+  credits         String    @default("10")
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  profile         UserProfile?
+  resume          Resume?
+  applications    JobApplication[]
+  employerProfile EmployerProfile?
+  testResults     EnglishTestResult[]
+  
+  // Messages
+  sentMessages        Message[] @relation("SentMessages")
+  receivedMessages    Message[] @relation("ReceivedMessages")
+  
+  // Company Membership
+  companyMemberships  CompanyMember[]
+  
+  // NextAuth
+  accounts        Account[]
+  sessions        Session[]
+}
+
+// ============================================
+// USER PROFILE
+// ============================================
+
+model UserProfile {
+  id              Int       @id @default(autoincrement())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [clerkId])
+  
+  // Professional Info
+  jobTitle        String?
+  summary         String?   @db.Text
+  skills          String[]  // Stored as array of strings
+  experienceYears Int?
+  
+  // Education
+  education       Education[]
+  
+  // Work History
+  workHistory     WorkExperience[]
+  
+  // Languages
+  languages       LanguageSkill[]
+  
+  // Skills relation
+  skillsRelation  UserSkill[]
+  
+  // Availability
+  availability    AvailabilityType?
+  expectedSalary Decimal?
+  currency        String    @default("USD")
+  
+  // Location Preferences
+  remoteWork      Boolean   @default(false)
+  relocate        Boolean   @default(false)
+  preferredLocations String[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Education {
+  id              Int           @id @default(autoincrement())
+  profileId       Int
+  profile         UserProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  institution     String
+  degree          String
+  fieldOfStudy    String?
+  startDate       DateTime
+  endDate         DateTime?
+  isCurrent       Boolean       @default(false)
+  grade           String?
+  description     String?       @db.Text
+}
+
+model WorkExperience {
+  id              Int           @id @default(autoincrement())
+  profileId       Int
+  profile         UserProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  companyName     String
+  jobTitle        String
+  location        String?
+  startDate       DateTime
+  endDate         DateTime?
+  isCurrent       Boolean       @default(false)
+  description     String?       @db.Text
+}
+
+model LanguageSkill {
+  id              Int           @id @default(autoincrement())
+  profileId       Int
+  profile         UserProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  language        String
+  proficiency     LanguageProficiency
+}
+
+// ============================================
+// RESUME / CV
+// ============================================
+
+model Resume {
+  id              Int         @id @default(autoincrement())
+  userId          String      @unique
+  user            User        @relation(fields: [userId], references: [clerkId])
+  
+  fileName        String
+  fileUrl         String
+  fileType        String      // pdf, doc, docx
+  fileSize        Int         // in bytes
+  
+  // Parsed Information
+  parsedData      Json?       // Extracted text, skills, experience
+  
+  // Status
+  isUploaded      Boolean     @default(false)
+  isVerified      Boolean     @default(false)
+  uploadedAt      DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+// ============================================
+// EMPLOYER PROFILE
+// ============================================
+
+model EmployerProfile {
+  id              Int         @id @default(autoincrement())
+  userId          String      @unique
+  user            User        @relation(fields: [userId], references: [clerkId])
+  
+  // Company Information
+  companyName     String
+  companyLogo     String?
+  companyWebsite  String?
+  companySize     CompanySize?
+  industry        String
+  description     String?     @db.Text
+  
+  // Contact Information
+  contactEmail    String
+  contactPhone    String?
+  
+  // Location
+  address         String?
+  city            String?
+  country         String?
+  
+  // Social
+  linkedIn        String?
+  twitter         String?
+  
+  // Verification
+  isVerified      Boolean     @default(false)
+  verifiedAt      DateTime?
+  
+  // Settings
+  hiringMode      HiringMode  @default(STANDARD)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Relations
+  jobs            Job[]
+}
+
+// ============================================
+// COMPANY (Single-tenant: Loft Community)
+// ============================================
+
+model Company {
+  id              Int       @id @default(autoincrement())
+  name            String    @default("Loft Community")
+  slug            String    @unique @default("loft-community")
+  description     String?   @db.Text
+  logo            String?
+  website         String?
+  contactEmail    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  members         CompanyMember[]
+  jobs            Job[]
+}
+
+model CompanyMember {
+  id              Int         @id @default(autoincrement())
+  companyId       Int
+  userId          String
+  role            CompanyRole @default(EMPLOYER)
+  createdAt       DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+}
+
+enum CompanyRole {
+  ADMIN
+  EMPLOYER
+}
+
+// ============================================
+// JOBS
+// ============================================
+
+model Job {
+  id              Int         @id @default(autoincrement())
+  
+  // Basic Info
+  title           String
+  slug            String      @unique
+  description     String      @db.Text
+  requirements    String?     @db.Text
+  benefits        String?     @db.Text
+  
+  // Job Details
+  jobType         JobType
+  experienceLevel ExperienceLevel
+  workMode        WorkMode
+  
+  // Location
+  location        String?
+  city            String?
+  country         String?
+  remoteWork      Boolean     @default(false)
+  
+  // Salary
+  salaryMin       Decimal?
+  salaryMax       Decimal?
+  salaryCurrency  String      @default("USD")
+  salaryPeriod    SalaryPeriod @default(YEARLY)
+  isSalaryVisible Boolean     @default(true)
+  
+  // Skills Required
+  requiredSkills  String[]
+  preferredSkills String[]
+  
+  // Status
+  status          JobStatus   @default(DRAFT)
+  isFeatured      Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  
+  // Application
+  applicationUrl  String?
+  applicationEmail String?
+  deadline        DateTime?
+  
+  // Views & Stats
+  viewsCount      Int         @default(0)
+  applicationsCount Int       @default(0)
+  
+  // Company (required after migration - Loft Community)
+  companyId       Int?
+  company         Company? @relation(fields: [companyId], references: [id])
+
+  // Employer (optional - the assigned employer managing this job)
+  employerId      String
+  employer        EmployerProfile @relation(fields: [employerId], references: [userId])
+  
+  // Category
+  category        JobCategory? @relation(fields: [categoryId], references: [id])
+  categoryId      Int?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  publishedAt     DateTime?
+  closedAt        DateTime?
+  
+  // Relations
+  applications    JobApplication[]
+  savedBy         SavedJob[]
+  requiredSkillsRelation JobRequiredSkill[]
+  messages        Message[]
+}
+
+model JobCategory {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  icon        String?
+  jobs        Job[]
+  parentId    Int?
+  parent      JobCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    JobCategory[] @relation("CategoryHierarchy")
+}
+
+// ============================================
+// JOB APPLICATIONS
+// ============================================
+
+model JobApplication {
+  id              Int             @id @default(autoincrement())
+  
+  // Applicant
+  userId          String
+  user            User            @relation(fields: [userId], references: [clerkId])
+  
+  // Job
+  jobId           Int
+  job             Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // Application Data
+  coverLetter     String?         @db.Text
+  resumeUrl       String?
+  
+  // Status
+  status          ApplicationStatus @default(PENDING)
+  
+  // Screening
+  englishTestRequired Boolean      @default(false)
+  englishTestScore   Int?
+  passedScreening    Boolean?
+  
+  // Timeline
+  appliedAt       DateTime        @default(now())
+  reviewedAt      DateTime?
+  interviewAt     DateTime?
+  rejectedAt      DateTime?
+  acceptedAt      DateTime?
+  
+  // Notes
+  employerNotes   String?         @db.Text
+  
+  // Shortlist (DB column replaces localStorage hack)
+  isShortlisted   Boolean         @default(false)
+  
+  // Relations
+  interview       Interview?
+}
+
+model Interview {
+  id              Int             @id @default(autoincrement())
+  applicationId   Int             @unique
+  application     JobApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  // Interview Details
+  scheduledAt     DateTime
+  duration        Int             @default(60) // minutes
+  type            InterviewType
+  meetingLink     String?
+  location        String?
+  
+  // Status
+  status          InterviewStatus @default(SCHEDULED)
+  completed       Boolean         @default(false)
+  
+  // Notes
+  notes           String?         @db.Text
+  feedback        String?         @db.Text
+  rating          Int?            // 1-5
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// ============================================
+// SAVED JOBS
+// ============================================
+
+model SavedJob {
+  id              Int         @id @default(autoincrement())
+  userId          String
+  jobId           Int
+  job             Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime    @default(now())
+  
+  @@unique([userId, jobId])
+}
+
+// ============================================
+// ENGLISH PROFICIENCY TEST
+// ============================================
+
+enum EnglishLevel {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  UPPER_INTERMEDIATE
+  ADVANCED
+  NATIVE
+}
+
+enum LanguageProficiency {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+  NATIVE
+}
+
+model EnglishTestQuestion {
+  id              Int         @id @default(autoincrement())
+  
+  // Question Content
+  question        String      @db.Text
+  questionType    QuestionType
+  difficulty      QuestionDifficulty
+  
+  // Options (for multiple choice)
+  options         Json?       // Array of options
+  
+  // Correct Answer
+  correctAnswer   String
+  explanation     String?     @db.Text
+  
+  // Category
+  category        TestCategory
+  
+  // Points
+  points          Int         @default(1)
+  
+  // Active
+  isActive        Boolean     @default(true)
+  
+  createdAt       DateTime    @default(now())
+}
+
+enum QuestionType {
+  READING
+  WRITING
+  LISTENING
+  SPEAKING
+  GRAMMAR
+  VOCABULARY
+  MULTIPLE_CHOICE
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum TestCategory {
+  GRAMMAR
+  VOCABULARY
+  READING
+  WRITING
+  LISTENING
+  SPEAKING
+  COMPREHENSION
+}
+
+model EnglishTestResult {
+  id              Int             @id @default(autoincrement())
+  userId          String
+  user            User            @relation(fields: [userId], references: [clerkId])
+  
+  // Test Details
+  testType        TestType
+  score           Int
+  totalQuestions  Int
+  correctAnswers  Int
+  duration        Int             // in seconds
+  
+  // Breakdown
+  breakdown       Json?           // Score by category
+  
+  // Level
+  level           EnglishLevel
+  
+  // Status
+  passed          Boolean
+  completedAt     DateTime        @default(now())
+  
+  // Certificate
+  certificateUrl  String?
+}
+
+enum TestType {
+  PLACEMENT
+  CERTIFICATION
+  SKILLS_ASSESSMENT
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id              Int             @id @default(autoincrement())
+  userId          String
+  
+  // Content
+  title           String
+  message         String          @db.Text
+  type            NotificationType
+  
+  // Data
+  data            Json?
+  link            String?
+  
+  // Status
+  isRead          Boolean         @default(false)
+  readAt          DateTime?
+  
+  createdAt       DateTime        @default(now())
+}
+
+enum NotificationType {
+  APPLICATION_RECEIVED
+  APPLICATION_SHORTLISTED
+  APPLICATION_REJECTED
+  JOB_RECOMMENDED
+  JOB_EXPIRED
+  PROFILE_VIEWED
+  MESSAGE
+  ENGLISH_TEST_INVITE
+  INTERVIEW_SCHEDULED
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  TEMPORARY
+  FREELANCE
+}
+
+enum ExperienceLevel {
+  ENTRY
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  EXECUTIVE
+}
+
+enum WorkMode {
+  ONSITE
+  REMOTE
+  HYBRID
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  SHORTLISTED
+  INTERVIEW
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  ONSITE
+  TECHNICAL
+  FINAL
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum CompanySize {
+  STARTUP       // 1-10
+  SMALL         // 11-50
+  MEDIUM        // 51-200
+  LARGE         // 201-500
+  ENTERPRISE    // 500+
+}
+
+enum HiringMode {
+  STANDARD
+  EXPRESS
+  URGENT
+}
+
+enum AvailabilityType {
+  IMMEDIATELY
+  TWO_WEEKS
+  ONE_MONTH
+  TWO_MONTHS
+  NOT_AVAILABLE
+}
+
+enum SalaryPeriod {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+// ============================================
+// SKILLS SYSTEM
+// ============================================
+
+enum SkillLevel {
+  EXPERT
+  INTERMEDIATE
+  BEGINNER
+}
+
+model Skill {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  category    String?
+  isCustom    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  
+  userSkills   UserSkill[]
+  jobSkills    JobRequiredSkill[]
+}
+
+model UserSkill {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  skillId   Int
+  level     SkillLevel?
+  skill     Skill       @relation(fields: [skillId], references: [id])
+  user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, skillId])
+}
+
+model JobRequiredSkill {
+  id          Int       @id @default(autoincrement())
+  jobId       Int
+  skillId     Int
+  isRequired  Boolean   @default(true)
+  skill       Skill     @relation(fields: [skillId], references: [id])
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@unique([jobId, skillId])
+}
+
+// ============================================
+// MESSAGING
+// ============================================
+
+model Message {
+  id              Int       @id @default(autoincrement())
+  senderId        String
+  receiverId      String
+  content         String    @db.Text
+  jobId           Int?
+  conversationId  String?   // Groups messages: "jobId-userId" or "userId-userId"
+  readAt          DateTime?
+  createdAt       DateTime  @default(now())
+  
+  sender      User      @relation("SentMessages", fields: [senderId], references: [clerkId])
+  receiver    User      @relation("ReceivedMessages", fields: [receiverId], references: [clerkId])
+  job         Job?      @relation(fields: [jobId], references: [id])
+}
+
+// ============================================
+// REPORTING
+// ============================================
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id            Int           @id @default(autoincrement())
+  reporterId    String
+  reportedType  String
+  reportedId    Int
+  reason        String
+  status        ReportStatus  @default(PENDING)
+  createdAt     DateTime      @default(now())
+}
+
+// ============================================
+// NOTIFICATION PREFERENCES
+// ============================================
+
+model NotificationPreference {
+  id                      Int      @id @default(autoincrement())
+  userId                  String   @unique
+  applicationUpdates      Boolean  @default(true)
+  newMessages             Boolean  @default(true)
+  jobAlerts               Boolean  @default(true)
+  marketing               Boolean  @default(true)
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+model RateLimit {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  count     Int      @default(1)
+  windowStart DateTime
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// ============================================
+// CACHE ENTRIES
+// ============================================
+
+model CacheEntry {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
