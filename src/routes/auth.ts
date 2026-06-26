@@ -3,7 +3,7 @@ import crypto from "crypto"
 import bcrypt from "bcryptjs"
 import { db } from "../lib/db"
 import { signToken, createCookie, clearCookie } from "../lib/jwt"
-import { requireAuth } from "../middleware/auth"
+import { requireAuth, optionalAuth } from "../middleware/auth"
 import { rateLimit } from "../lib/rate-limit"
 import {
   registerUser,
@@ -400,6 +400,18 @@ router.post("/update-password", async (req: Request, res: Response) => {
   } catch (error) {
     log.error("Update password error", error)
     return res.status(500).json({ success: false, message: "Internal server error" })
+  }
+})
+
+// GET /api/auth/session - Session check for frontend
+router.get("/session", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user) {
+      return res.json({ user: { email: req.user.email } })
+    }
+    return res.json({ user: null })
+  } catch {
+    return res.json({ user: null })
   }
 })
 
