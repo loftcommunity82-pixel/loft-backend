@@ -33,7 +33,7 @@ router.get("/analytics", requireAuth, async (req: AuthenticatedRequest, res: Res
   const weekAgo = new Date()
   weekAgo.setDate(weekAgo.getDate() - 7)
 
-  const [totalUsers, totalSeekers, totalEmployers, activeJobs, totalApplications, hiredThisMonth, pendingJobs, flaggedJobs, applicationsThisWeek] = await Promise.all([
+  const [totalUsers, totalSeekers, totalEmployers, activeJobs, totalApplications, hiredThisMonth, pendingJobs, flaggedJobs, applicationsThisWeek, pendingApps, reviewingApps, shortlistedApps, interviewApps, offeredApps, rejectedApps] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { isApplicant: true } }),
     db.user.count({ where: { isEmployer: true } }),
@@ -43,11 +43,17 @@ router.get("/analytics", requireAuth, async (req: AuthenticatedRequest, res: Res
     db.job.count({ where: { status: "DRAFT" } }),
     db.job.count({ where: { isActive: false, status: "PUBLISHED" } }),
     db.jobApplication.count({ where: { appliedAt: { gte: weekAgo } } }),
+    db.jobApplication.count({ where: { status: "PENDING" } }),
+    db.jobApplication.count({ where: { status: "REVIEWING" } }),
+    db.jobApplication.count({ where: { status: "SHORTLISTED" } }),
+    db.jobApplication.count({ where: { status: "INTERVIEW" } }),
+    db.jobApplication.count({ where: { status: "OFFERED" } }),
+    db.jobApplication.count({ where: { status: "REJECTED" } }),
   ])
 
   const hireRate = totalApplications > 0 ? Math.round((hiredThisMonth / totalApplications) * 100) : 0
 
-  return res.json({ totalUsers, totalSeekers, totalEmployers, activeJobs, totalApplications, applicationsThisWeek, hiredThisMonth, pendingJobs, flaggedJobs, hireRate, updatedAt: new Date().toISOString() })
+  return res.json({ totalUsers, totalSeekers, totalEmployers, activeJobs, totalApplications, applicationsThisWeek, hiredThisMonth, pendingJobs, flaggedJobs, hireRate, pendingApps, reviewingApps, shortlistedApps, interviewApps, offeredApps, rejectedApps, updatedAt: new Date().toISOString() })
 })
 
 // GET /api/admin/employers
@@ -191,6 +197,132 @@ router.patch("/jobs", requireAuth, async (req: AuthenticatedRequest, res: Respon
   })
 
   return res.json({ success: true, job })
+})
+
+// GET /api/admin/applications - List all applications across all jobs
+router.get("/applications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!(await requireAdmin(req, res))) return
+
+  const status = req.query.status as string
+  const search = req.query.search as string
+  const page = Math.max(1, parseInt(req.query.page as string) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50))
+
+  const where: Record<string, unknown> = {}
+  if (status) where.status = status
+
+  // Status breakdown for header
+  const [
+    total,
+    pendingCount,
+    reviewingCount,
+    shortlistedCount,
+    interviewCount,
+    offeredCount,
+    hiredCount,
+    rejectedCount,
+  ] = await Promise.all([
+    db.jobApplication.count({ where }),
+    db.jobApplication.count({ where: { status: "PENDING" } }),
+    db.jobApplication.count({ where: { status: "REVIEWING" } }),
+    db.jobApplication.count({ where: { status: "SHORTLISTED" } }),
+    db.jobApplication.count({ where: { status: "INTERVIEW" } }),
+    db.jobApplication.count({ where: { status: "OFFERED" } }),
+    db.jobApplication.count({ where: { status: "HIRED" } }),
+    db.jobApplication.count({ where: { status: "REJECTED" } }),
+  ])
+
+  const applications = await db.jobApplication.findMany({
+    where,
+    include: {
+      job: {
+        select: {
+          id: true, title: true, slug: true, location: true, city: true,
+          jobType: true, experienceLevel: true, workMode: true,
+          employer: { select: { companyName: true, companyLogo: true, contactEmail: true } },
+        },
+      },
+      user: {
+        select: {
+          id: true, clerkId: true, firstName: true, lastName: true,
+          email: true, profileImage: true, phone: true,
+          profile: { select: { jobTitle: true, experienceYears: true, skills: true } },
+        },
+      },
+    },
+    orderBy: { appliedAt: "desc" },
+    skip: (page - 1) * limit,
+    take: limit,
+  })
+
+  return res.json({
+    applications: applications.map(app => ({
+      id: app.id, status: app.status, coverLetter: app.coverLetter,
+      appliedAt: app.appliedAt, reviewedAt: app.reviewedAt,
+      interviewAt: app.interviewAt, employerNotes: app.employerNotes,
+      isShortlisted: app.isShortlisted,
+      job: app.job,
+      candidate: app.user,
+    })),
+    stats: {
+      total, pendingCount, reviewingCount, shortlistedCount,
+      interviewCount, offeredCount, hiredCount, rejectedCount,
+    },
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  })
+})
+
+// GET /api/admin/applications/:id - Full application detail
+router.get("/applications/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!(await requireAdmin(req, res))) return
+
+  const applicationId = parseInt(req.params.id)
+  const application = await db.jobApplication.findUnique({
+    where: { id: applicationId },
+    include: {
+      job: {
+        include: {
+          employer: { select: { companyName: true, companyLogo: true, city: true, industry: true, contactEmail: true } },
+          requiredSkillsRelation: { include: { skill: true } },
+        },
+      },
+      user: {
+        select: {
+          id: true, clerkId: true, firstName: true, lastName: true,
+          email: true, profileImage: true, name: true, phone: true,
+          profile: { select: { jobTitle: true, summary: true, experienceYears: true, skills: true } },
+        },
+      },
+      interview: true,
+    },
+  })
+
+  if (!application) return res.status(404).json({ error: "Application not found" })
+
+  return res.json({
+    id: application.id, status: application.status, coverLetter: application.coverLetter,
+    resumeUrl: application.resumeUrl, appliedAt: application.appliedAt,
+    reviewedAt: application.reviewedAt, interviewAt: application.interviewAt,
+    rejectedAt: application.rejectedAt, acceptedAt: application.acceptedAt,
+    employerNotes: application.employerNotes, isShortlisted: application.isShortlisted,
+    englishTestRequired: application.englishTestRequired,
+    englishTestScore: application.englishTestScore,
+    passedScreening: application.passedScreening,
+    job: {
+      id: application.job.id, title: application.job.title, slug: application.job.slug,
+      location: application.job.location, city: application.job.city,
+      jobType: application.job.jobType, experienceLevel: application.job.experienceLevel,
+      workMode: application.job.workMode,
+      salaryMin: application.job.salaryMin, salaryMax: application.job.salaryMax,
+      salaryCurrency: application.job.salaryCurrency,
+      skills: application.job.requiredSkillsRelation.map(rs => rs.skill.name),
+      company: application.job.employer,
+    },
+    candidate: application.user,
+    interview: application.interview,
+  })
 })
 
 export default router
