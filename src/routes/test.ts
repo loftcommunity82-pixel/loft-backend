@@ -85,11 +85,22 @@ router.post("/setup", async (_req: Request, res: Response) => {
       },
     })
 
+    // Create seed message so Messages page has a conversation
+    await db.message.create({
+      data: {
+        senderId: employer.clerkId,
+        receiverId: applicant.clerkId,
+        content: "Thank you for your application. We would like to schedule an interview.",
+      },
+    })
+
     return res.json({
       success: true,
       data: {
         applicantEmail: applicant.email,
         employerEmail: employer.email,
+        applicantClerkId: applicant.clerkId,
+        employerClerkId: employer.clerkId,
         password: "E2ETestPass123!",
         jobSlug: job.slug,
         jobId: job.id,
@@ -116,6 +127,7 @@ router.post("/teardown", async (_req: Request, res: Response) => {
         await db.userProfile.deleteMany({ where: { userId: user.clerkId } })
         await db.resume.deleteMany({ where: { userId: user.clerkId } })
         await db.savedJob.deleteMany({ where: { userId: user.clerkId } })
+        await db.message.deleteMany({ where: { OR: [{ senderId: user.clerkId }, { receiverId: user.clerkId }] } })
         await db.notification.deleteMany({ where: { userId: user.clerkId } })
         await db.user.delete({ where: { email } })
       }

@@ -25,7 +25,7 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     const messages = await db.message.findMany({
       where: whereClause,
       orderBy: { createdAt: "asc" },
-      include: { sender: { select: { id: true, name: true, firstName: true, lastName: true, profileImage: true } }, receiver: { select: { id: true, name: true, firstName: true, lastName: true, profileImage: true } } },
+      include: { sender: { select: { id: true, clerkId: true, name: true, firstName: true, lastName: true, profileImage: true } }, receiver: { select: { id: true, clerkId: true, name: true, firstName: true, lastName: true, profileImage: true } } },
     })
 
     return res.json(messages.map(msg => ({
