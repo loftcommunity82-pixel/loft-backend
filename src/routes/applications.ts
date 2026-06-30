@@ -15,13 +15,20 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     const jobIdParam = req.query.jobId as string
     const statusParam = req.query.status as string
 
-    const user = await db.user.findUnique({ where: { email: userEmail } })
+    const user = await db.user.findUnique({
+      where: { email: userEmail },
+      include: { companyMemberships: { where: { role: "ADMIN" }, take: 1 } },
+    })
     if (!user) return res.status(404).json({ error: "User not found" })
+
+    const isAdmin = user.companyMemberships.length > 0
 
     const where: Record<string, unknown> = {}
     if (statusParam) where.status = statusParam
     if (jobIdParam) {
       where.jobId = parseInt(jobIdParam)
+    } else if (isAdmin) {
+      // Admin sees all applications
     } else if (user.isEmployer) {
       where.job = { employerId: user.clerkId }
     } else {
@@ -189,8 +196,15 @@ router.patch("/:id/status", requireAuth, async (req: AuthenticatedRequest, res: 
     })
     if (!application) return res.status(404).json({ error: "Application not found" })
 
-    const user = await db.user.findUnique({ where: { email: userEmail } })
-    if (application.job.employerId !== user?.clerkId) return res.status(403).json({ error: "Not authorized" })
+    const user = await db.user.findUnique({
+      where: { email: userEmail },
+      include: { companyMemberships: { take: 1 } },
+    })
+    if (!user) return res.status(403).json({ error: "Not authorized" })
+
+    const isOwner = application.job.employerId === user.clerkId
+    const isCompanyMember = user.companyMemberships.length > 0
+    if (!isOwner && !isCompanyMember) return res.status(403).json({ error: "Not authorized" })
 
     const updated = await db.jobApplication.update({
       where: { id: applicationId },

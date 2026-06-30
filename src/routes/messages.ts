@@ -3,6 +3,8 @@ import { db } from "../lib/db"
 import { requireAuth } from "../middleware/auth"
 import { sendEmail, emailTemplates, shouldSendEmail } from "../lib/email"
 import { createLogger } from "../lib/logger"
+import { sendEvent } from "../lib/sse"
+import { rateLimit } from "../lib/rate-limit"
 import type { AuthenticatedRequest } from "../types"
 
 const router = Router()
@@ -44,8 +46,13 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     const user = await db.user.findUnique({ where: { email: userEmail } })
     if (!user) return res.status(404).json({ error: "User not found" })
 
-    const { receiverId, content, jobId } = req.body
+    const { receiverId, content: rawContent, jobId } = req.body
+    const content = (rawContent || "").trim().slice(0, 5000)
     if (!receiverId || !content) return res.status(400).json({ error: "Missing required fields" })
+
+    const ip = req.ip || req.socket.remoteAddress || "unknown"
+    const { success: withinLimit } = await rateLimit(`msg:${user.clerkId}:${ip}`, 30, 60000)
+    if (!withinLimit) return res.status(429).json({ error: "Too many messages. Please slow down." })
 
     // Verify candidate is at INTERVIEW stage if jobId provided
     if (jobId) {
@@ -61,16 +68,27 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
     })
 
     const senderName = user.firstName || user.name || "Employer"
+    const receiver = await db.user.findUnique({ where: { clerkId: receiverId } })
 
     await db.notification.create({
       data: { userId: receiverId, title: "New Message", message: `You have a new message from ${senderName}`, type: "MESSAGE", link: "/dashboard/messages" },
     })
 
-    const receiver = await db.user.findUnique({ where: { clerkId: receiverId } })
     if (receiver?.email) {
       const shouldNotify = await shouldSendEmail(receiverId, "newMessages")
       if (shouldNotify) await sendEmail(emailTemplates.newMessage(senderName, receiver.email))
     }
+
+    const messagePayload = {
+      id: message.id, content: message.content, senderId: user.clerkId,
+      receiverId, jobId: jobId ? parseInt(jobId) : null,
+      createdAt: message.createdAt,
+      sender: { id: user.id, firstName: user.firstName, lastName: user.lastName, profileImage: user.profileImage },
+      receiver: receiver ? { id: receiver.id, firstName: receiver.firstName, lastName: receiver.lastName, profileImage: receiver.profileImage } : null,
+    }
+
+    sendEvent(receiverId, "new_message", messagePayload)
+    sendEvent(user.clerkId, "new_message", messagePayload)
 
     return res.json({ success: true, message: { id: message.id, content: message.content, createdAt: message.createdAt } })
   } catch (error) {

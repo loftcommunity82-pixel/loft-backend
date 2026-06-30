@@ -3,17 +3,21 @@ import { db } from "../lib/db"
 import { requireAuth } from "../middleware/auth"
 import { createLogger } from "../lib/logger"
 import type { AuthenticatedRequest } from "../types"
+import env from "../config/env"
 
 const router = Router()
 const log = createLogger("admin")
 
-// Helper: simple admin check (hardcoded company 1 / "loft-community")
+// Flexible admin check: CompanyMember with role ADMIN, or email in ADMIN_EMAILS env var
 async function requireAdmin(req: AuthenticatedRequest, res: Response): Promise<boolean> {
   try {
     const userEmail = req.user!.email
+
+    if (env.adminEmails.includes(userEmail)) return true
+
     const user = await db.user.findUnique({
       where: { email: userEmail },
-      include: { companyMemberships: { where: { company: { slug: "loft-community" }, role: "ADMIN" }, take: 1 } },
+      include: { companyMemberships: { where: { role: "ADMIN" }, take: 1 } },
     })
     if (!user?.companyMemberships?.length) {
       res.status(403).json({ error: "Unauthorized" })

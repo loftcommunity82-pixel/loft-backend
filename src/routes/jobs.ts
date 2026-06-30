@@ -475,6 +475,7 @@ router.post("/:slug/apply", requireAuth, async (req: AuthenticatedRequest, res: 
     if (existing) return res.status(400).json({ error: "Already applied to this job" })
 
     const { coverLetter, resumeUrl } = req.body
+    if (coverLetter && coverLetter.length > 5000) return res.status(400).json({ error: "Cover letter too long (max 5000 characters)" })
     const application = await db.jobApplication.create({
       data: { userId: user.clerkId, jobId, coverLetter, resumeUrl: resumeUrl || null, status: "PENDING" },
       include: {
@@ -500,19 +501,27 @@ router.get("/:slug/candidates", requireAuth, async (req: AuthenticatedRequest, r
   try {
     const userEmail = req.user!.email
     const sort = (req.query.sort as string) || "matchScore"
-    const jobId = parseInt(req.params.slug)
+    const rawSlug = req.params.slug
+    const jobIdNum = parseInt(rawSlug)
 
-    const job = await db.job.findUnique({
-      where: { id: jobId },
+    const job = await db.job.findFirst({
+      where: isNaN(jobIdNum) ? { slug: rawSlug } : { id: jobIdNum },
       include: { requiredSkillsRelation: { include: { skill: true } } },
     })
     if (!job) return res.status(404).json({ error: "Job not found" })
 
-    const user = await db.user.findUnique({ where: { email: userEmail } })
-    if (job.employerId !== user?.clerkId) return res.status(403).json({ error: "Not authorized" })
+    const user = await db.user.findUnique({
+      where: { email: userEmail },
+      include: { companyMemberships: { take: 1 } },
+    })
+    if (!user) return res.status(403).json({ error: "Not authorized" })
+
+    const isOwner = job.employerId === user.clerkId
+    const isCompanyMember = user.companyMemberships.length > 0
+    if (!isOwner && !isCompanyMember) return res.status(403).json({ error: "Not authorized" })
 
     const applications = await db.jobApplication.findMany({
-      where: { jobId },
+      where: { jobId: job.id },
       include: { user: { include: { profile: { include: { skillsRelation: { include: { skill: true } } } } } } },
     })
 
@@ -521,7 +530,7 @@ router.get("/:slug/candidates", requireAuth, async (req: AuthenticatedRequest, r
       const userSkillIds = (app.user.profile?.skillsRelation || []).map((s: any) => s.skillId)
       const matchedSkills = userSkillIds.filter((id: number) => jobSkillIds.includes(id)).length
       const matchScore = jobSkillIds.length > 0 ? Math.round((matchedSkills / jobSkillIds.length) * 100) : 0
-      return { id: app.id, status: app.status, appliedAt: app.appliedAt, coverLetter: app.coverLetter, matchScore, matchedSkills, totalRequired: jobSkillIds.length, candidate: { id: app.user.id, name: app.user.name, firstName: app.user.firstName, lastName: app.user.lastName, email: app.user.email, profileImage: app.user.profileImage, profile: app.user.profile } }
+      return { id: app.id, status: app.status, appliedAt: app.appliedAt, coverLetter: app.coverLetter, matchScore, matchedSkills, totalRequired: jobSkillIds.length, candidate: { id: app.user.id, clerkId: app.user.clerkId, name: app.user.name, firstName: app.user.firstName, lastName: app.user.lastName, email: app.user.email, profileImage: app.user.profileImage, profile: app.user.profile } }
     })
 
     if (sort === "date") candidates.sort((a: any, b: any) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime())

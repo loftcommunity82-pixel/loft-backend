@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
     "start": "tsx src/index.ts",
     "db:generate": "prisma generate",
@@ -20,6 +20,7 @@
     "jsonwebtoken": "^9.0.2",
     "resend": "^3.2.0",
     "stripe": "^14.21.0",
+    "uploadthing": "^7.7.4",
     "zod": "^3.22.4"
   },
   "devDependencies": {

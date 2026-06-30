@@ -28,7 +28,7 @@ router.patch("/profile", requireAuth, async (req: AuthenticatedRequest, res: Res
   try {
     const userEmail = req.user!.email
     const body = req.body
-    const { firstName, lastName, phone, dateOfBirth, address, city, country, nationality, jobTitle, summary, experienceYears, remoteWork, relocate, expectedSalary, availability, englishTestScore, englishTestDate, englishTestLevel, skills } = body
+    const { firstName, lastName, phone, dateOfBirth, address, city, country, nationality, jobTitle, summary, experienceYears, remoteWork, relocate, expectedSalary, availability, englishTestScore, englishTestDate, englishTestLevel, skills, profileImage } = body
 
     const user = await db.user.update({
       where: { email: userEmail },
@@ -41,6 +41,7 @@ router.patch("/profile", requireAuth, async (req: AuthenticatedRequest, res: Res
         englishTestScore: englishTestScore !== undefined ? englishTestScore : undefined,
         englishTestDate: englishTestDate ? new Date(englishTestDate) : undefined,
         englishTestLevel: englishTestLevel || undefined,
+        profileImage: profileImage || undefined,
       },
     })
 

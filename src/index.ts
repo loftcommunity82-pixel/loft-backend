@@ -17,6 +17,9 @@ import skillsRoutes from "./routes/skills"
 import interviewsRoutes from "./routes/interviews"
 import paymentRoutes from "./routes/payment"
 import contactRoutes from "./routes/contact"
+import uploadthingRoutes from "./routes/uploadthing"
+import sseRoutes from "./routes/sse"
+import testRoutes from "./routes/test"
 
 const app = express()
 
@@ -25,7 +28,7 @@ app.use(cors({
   credentials: true,
 }))
 app.use(cookieParser())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 app.use("/api/auth", authRoutes)
 app.use("/api/health", healthRoutes)
@@ -40,6 +43,12 @@ app.use("/api/skills", skillsRoutes)
 app.use("/api/interviews", interviewsRoutes)
 app.use("/api/payment", paymentRoutes)
 app.use("/api/contact", contactRoutes)
+app.use("/api/uploadthing", uploadthingRoutes)
+app.use("/api/sse", sseRoutes)
+
+if (env.isDev) {
+  app.use("/api/test", testRoutes)
+}
 
 app.use(errorHandler)
 

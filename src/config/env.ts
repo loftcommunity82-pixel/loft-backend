@@ -9,6 +9,7 @@ const env = {
   supportEmail: process.env.SUPPORT_EMAIL || "support@loftcommunity.com",
   stripeSecret: process.env.STRIPE_SECRET || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+  adminEmails: (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim()).filter(Boolean),
 }
 
 export default env
